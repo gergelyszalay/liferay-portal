@@ -297,6 +297,9 @@ function BulkActions({
 											{bulkActions.map(
 												(actionDefinition) => (
 													<DropDown.Item
+														disabled={actionDefinition.isDisabled?.(
+															selectedItems
+														)}
 														key={
 															actionDefinition.label
 														}

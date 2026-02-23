@@ -71,6 +71,7 @@ export type AdditionalProps = {
 
 export default function AssetsFDSPropsTransformer({
 	additionalProps,
+	bulkActions = [],
 	creationMenu,
 	itemsActions = [],
 	views,
@@ -78,6 +79,7 @@ export default function AssetsFDSPropsTransformer({
 }: {
 	additionalProps: AdditionalProps;
 	apiURL?: string;
+	bulkActions?: any[];
 	creationMenu: any;
 	id?: string;
 	itemsActions?: any[];
@@ -114,6 +116,17 @@ export default function AssetsFDSPropsTransformer({
 
 	return {
 		...otherProps,
+		bulkActions: bulkActions.map((action) => {
+			if (action?.data?.id === 'download') {
+				return {
+					...action,
+					isDisabled: (selectedItems: any[]) =>
+						!selectedItems.every((item) => item.embedded?.file),
+				};
+			}
+
+			return action;
+		}),
 		creationMenu: {
 			...creationMenu,
 			primaryItems: addOnClickToCreationMenuItems(

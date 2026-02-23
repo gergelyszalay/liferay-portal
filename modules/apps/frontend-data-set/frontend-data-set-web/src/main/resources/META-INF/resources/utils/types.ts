@@ -109,6 +109,7 @@ export interface IBaseActions {
 interface IBulkActionItem {
 	href?: string;
 	icon?: string;
+	isDisabled?: (selectedItems: any[]) => boolean;
 	label?: string;
 	method?: string;
 	target?: 'modal' | 'sidePanel';
