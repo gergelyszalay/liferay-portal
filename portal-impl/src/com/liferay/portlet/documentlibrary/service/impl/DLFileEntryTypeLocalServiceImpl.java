@@ -5,6 +5,9 @@
 
 package com.liferay.portlet.documentlibrary.service.impl;
 
+import com.liferay.asset.kernel.model.AssetCategoryConstants;
+import com.liferay.asset.kernel.model.AssetVocabulary;
+import com.liferay.asset.kernel.service.AssetVocabularyLocalService;
 import com.liferay.document.library.kernel.exception.DuplicateDLFileEntryTypeExternalReferenceCodeException;
 import com.liferay.document.library.kernel.exception.DuplicateFileEntryTypeException;
 import com.liferay.document.library.kernel.exception.NoSuchFileEntryTypeException;
@@ -12,6 +15,7 @@ import com.liferay.document.library.kernel.exception.NoSuchFolderException;
 import com.liferay.document.library.kernel.exception.NoSuchMetadataSetException;
 import com.liferay.document.library.kernel.exception.RequiredFileEntryTypeException;
 import com.liferay.document.library.kernel.model.DLFileEntry;
+import com.liferay.document.library.kernel.model.DLFileEntryConstants;
 import com.liferay.document.library.kernel.model.DLFileEntryMetadata;
 import com.liferay.document.library.kernel.model.DLFileEntryType;
 import com.liferay.document.library.kernel.model.DLFileEntryTypeConstants;
@@ -62,6 +66,7 @@ import com.liferay.portal.kernel.util.Validator;
 import com.liferay.portal.kernel.uuid.PortalUUIDUtil;
 import com.liferay.portal.repository.liferayrepository.model.LiferayFileEntry;
 import com.liferay.portal.repository.liferayrepository.model.LiferayFileVersion;
+import com.liferay.portlet.asset.util.AssetVocabularySettingsHelper;
 import com.liferay.portlet.documentlibrary.service.base.DLFileEntryTypeLocalServiceBaseImpl;
 
 import java.util.ArrayList;
@@ -272,6 +277,8 @@ public class DLFileEntryTypeLocalServiceImpl
 			dlFileEntryType.getCompanyId(), DLFileEntryType.class.getName(),
 			ResourceConstants.SCOPE_INDIVIDUAL,
 			dlFileEntryType.getFileEntryTypeId());
+
+		_setVocabularyClassTypePK(dlFileEntryType);
 
 		return dlFileEntryTypePersistence.remove(dlFileEntryType);
 	}
@@ -786,6 +793,56 @@ public class DLFileEntryTypeLocalServiceImpl
 		return folderId;
 	}
 
+	private void _setVocabularyClassTypePK(DLFileEntryType dlFileEntryType)
+		throws PortalException {
+
+		List<AssetVocabulary> vocabularies =
+			_assetVocabularyLocalService.getGroupsVocabularies(
+				new long[] {dlFileEntryType.getGroupId()},
+				DLFileEntryConstants.getClassName(),
+				dlFileEntryType.getFileEntryTypeId());
+
+		for (AssetVocabulary vocabulary : vocabularies) {
+			AssetVocabularySettingsHelper assetVocabularySettingsHelper =
+				new AssetVocabularySettingsHelper(vocabulary.getSettings());
+
+			long[] classNameIds =
+				assetVocabularySettingsHelper.getClassNameIds();
+			long[] classTypePKs =
+				assetVocabularySettingsHelper.getClassTypePKs();
+
+			boolean[] depotRequireds = new boolean[classNameIds.length];
+			boolean[] requireds = new boolean[classNameIds.length];
+
+			for (int i = 0; i < classNameIds.length; i++) {
+				depotRequireds[i] =
+					assetVocabularySettingsHelper.
+						isClassNameIdAndClassTypePKDepotRequired(
+							classNameIds[i], classTypePKs[i]);
+				requireds[i] =
+					assetVocabularySettingsHelper.
+						isClassNameIdAndClassTypePKRequired(
+							classNameIds[i], classTypePKs[i]);
+
+				if (classTypePKs[i] == dlFileEntryType.getFileEntryTypeId()) {
+					classTypePKs[i] = AssetCategoryConstants.ALL_CLASS_TYPE_PK;
+					depotRequireds[i] = false;
+					requireds[i] = false;
+				}
+			}
+
+			assetVocabularySettingsHelper.setClassNameIdsAndClassTypePKs(
+				classNameIds, classTypePKs, depotRequireds, requireds);
+
+			_assetVocabularyLocalService.updateVocabulary(
+				vocabulary.getExternalReferenceCode(),
+				vocabulary.getVocabularyId(), vocabulary.getTitleMap(),
+				vocabulary.getDescriptionMap(),
+				assetVocabularySettingsHelper.toString(),
+				vocabulary.getVisibilityType());
+		}
+	}
+
 	private void _validateDDMStructures(
 			String fileEntryTypeKey, long[] ddmStructureIds)
 		throws NoSuchMetadataSetException {
@@ -846,6 +903,9 @@ public class DLFileEntryTypeLocalServiceImpl
 
 	private static final Log _log = LogFactoryUtil.getLog(
 		DLFileEntryTypeLocalServiceImpl.class);
+
+	@BeanReference(type = AssetVocabularyLocalService.class)
+	private AssetVocabularyLocalService _assetVocabularyLocalService;
 
 	@BeanReference(type = ClassNameLocalService.class)
 	private ClassNameLocalService _classNameLocalService;
