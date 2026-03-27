@@ -6,7 +6,11 @@
 package com.liferay.document.library.service.test;
 
 import com.liferay.arquillian.extension.junit.bridge.junit.Arquillian;
+import com.liferay.asset.kernel.model.AssetCategoryConstants;
+import com.liferay.asset.kernel.model.AssetVocabulary;
+import com.liferay.asset.kernel.service.AssetVocabularyLocalService;
 import com.liferay.document.library.kernel.model.DLFileEntry;
+import com.liferay.document.library.kernel.model.DLFileEntryConstants;
 import com.liferay.document.library.kernel.model.DLFileEntryMetadata;
 import com.liferay.document.library.kernel.model.DLFileEntryType;
 import com.liferay.document.library.kernel.model.DLFileEntryTypeConstants;
@@ -32,6 +36,7 @@ import com.liferay.portal.kernel.repository.model.Folder;
 import com.liferay.portal.kernel.search.Indexer;
 import com.liferay.portal.kernel.search.SearchContext;
 import com.liferay.portal.kernel.service.ServiceContext;
+import com.liferay.portal.kernel.test.TestInfo;
 import com.liferay.portal.kernel.test.rule.AggregateTestRule;
 import com.liferay.portal.kernel.test.rule.DeleteAfterTestRun;
 import com.liferay.portal.kernel.test.util.GroupTestUtil;
@@ -44,7 +49,10 @@ import com.liferay.portal.kernel.util.ContentTypes;
 import com.liferay.portal.kernel.util.File;
 import com.liferay.portal.kernel.util.LocaleThreadLocal;
 import com.liferay.portal.kernel.util.LocaleUtil;
+import com.liferay.portal.kernel.util.Portal;
 import com.liferay.portal.kernel.util.StringUtil;
+import com.liferay.portal.kernel.util.UnicodeProperties;
+import com.liferay.portal.kernel.util.UnicodePropertiesBuilder;
 import com.liferay.portal.test.rule.Inject;
 import com.liferay.portal.test.rule.LiferayIntegrationTestRule;
 import com.liferay.portal.test.rule.PermissionCheckerMethodTestRule;
@@ -192,6 +200,40 @@ public class DLFileEntryTypeServiceTest {
 				"12345678", _group.getGroupId()));
 
 		Assert.assertEquals(0, _indexer.searchCount(searchContext));
+	}
+
+	@Test
+	@TestInfo("LPD-84137")
+	public void testDeleteFileEntryTypeSetsVocabularyClassTypePK()
+		throws Exception {
+
+		DLFileEntryType dlFileEntryType = _addFileEntryType(null);
+
+		UnicodeProperties unicodeProperties = UnicodePropertiesBuilder.create(
+			true
+		).put(
+			"selectedClassNameIds",
+			_portal.getClassNameId(DLFileEntryConstants.getClassName()) +
+				StringPool.COLON + dlFileEntryType.getFileEntryTypeId()
+		).build();
+
+		AssetVocabulary assetVocabulary =
+			_assetVocabularyLocalService.addVocabulary(
+				TestPropsValues.getUserId(), _group.getGroupId(),
+				RandomTestUtil.randomString(),
+				Collections.singletonMap(
+					LocaleUtil.getSiteDefault(), RandomTestUtil.randomString()),
+				null, unicodeProperties.toString(),
+				ServiceContextTestUtil.getServiceContext(_group.getGroupId()));
+
+		_dlFileEntryTypeLocalService.deleteFileEntryType(dlFileEntryType);
+
+		assetVocabulary = _assetVocabularyLocalService.getVocabulary(
+			assetVocabulary.getVocabularyId());
+
+		Assert.assertEquals(
+			AssetCategoryConstants.ALL_CLASS_TYPE_PK,
+			assetVocabulary.getSelectedClassTypePKs()[0]);
 	}
 
 	@Test
@@ -438,6 +480,9 @@ public class DLFileEntryTypeServiceTest {
 	)
 	private static Indexer<DLFileEntryType> _indexer;
 
+	@Inject
+	private AssetVocabularyLocalService _assetVocabularyLocalService;
+
 	private DLFileEntryType _basicDocumentDLFileEntryType;
 
 	@Inject(filter = "ddm.form.deserializer.type=xsd")
@@ -460,5 +505,8 @@ public class DLFileEntryTypeServiceTest {
 
 	@DeleteAfterTestRun
 	private Group _group;
+
+	@Inject
+	private Portal _portal;
 
 }
