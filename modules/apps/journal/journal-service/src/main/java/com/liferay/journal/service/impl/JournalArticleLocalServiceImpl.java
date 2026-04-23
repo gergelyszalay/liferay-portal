@@ -1196,6 +1196,12 @@ public class JournalArticleLocalServiceImpl
 					deleteJournalArticleResource(articleResource);
 			}
 		}
+		else {
+
+			// Friendly URL
+
+			_deleteUnusedFriendlyURLEntries(article);
+		}
 
 		// Article
 
@@ -7867,6 +7873,50 @@ public class JournalArticleLocalServiceImpl
 		}
 		finally {
 			serviceContext.setIndexingEnabled(indexingEnabled);
+		}
+	}
+
+	private void _deleteUnusedFriendlyURLEntries(JournalArticle article)
+		throws PortalException {
+
+		List<JournalArticle> journalArticles =
+			journalArticlePersistence.findByG_A(
+				article.getGroupId(), article.getArticleId());
+
+		Set<String> urlTitlesInUse = new HashSet<>();
+
+		for (JournalArticle journalArticle : journalArticles) {
+			if (journalArticle.getId() == article.getId()) {
+				continue;
+			}
+
+			urlTitlesInUse.add(journalArticle.getUrlTitle());
+		}
+
+		long classNameId = _classNameLocalService.getClassNameId(
+			JournalArticle.class);
+
+		FriendlyURLEntry mainFriendlyURLEntry =
+			friendlyURLEntryLocalService.fetchMainFriendlyURLEntry(
+				classNameId, article.getResourcePrimKey());
+
+		List<FriendlyURLEntry> friendlyURLEntries =
+			friendlyURLEntryLocalService.getFriendlyURLEntries(
+				article.getGroupId(), classNameId,
+				article.getResourcePrimKey());
+
+		for (FriendlyURLEntry friendlyURLEntry : friendlyURLEntries) {
+			if ((mainFriendlyURLEntry != null) &&
+				(friendlyURLEntry.getFriendlyURLEntryId() ==
+					mainFriendlyURLEntry.getFriendlyURLEntryId())) {
+
+				continue;
+			}
+
+			if (!urlTitlesInUse.contains(friendlyURLEntry.getUrlTitle())) {
+				friendlyURLEntryLocalService.deleteFriendlyURLEntry(
+					friendlyURLEntry);
+			}
 		}
 	}
 
