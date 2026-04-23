@@ -6,11 +6,14 @@
 package com.liferay.journal.friendly.url.test;
 
 import com.liferay.arquillian.extension.junit.bridge.junit.Arquillian;
+import com.liferay.friendly.url.model.FriendlyURLEntry;
+import com.liferay.friendly.url.service.FriendlyURLEntryLocalService;
 import com.liferay.journal.constants.JournalArticleConstants;
 import com.liferay.journal.constants.JournalFolderConstants;
 import com.liferay.journal.model.JournalArticle;
 import com.liferay.journal.service.JournalArticleLocalService;
 import com.liferay.journal.test.util.JournalTestUtil;
+import com.liferay.portal.configuration.test.util.ConfigurationTemporarySwapper;
 import com.liferay.portal.kernel.model.Group;
 import com.liferay.portal.kernel.test.rule.AggregateTestRule;
 import com.liferay.portal.kernel.test.rule.DeleteAfterTestRun;
@@ -20,8 +23,10 @@ import com.liferay.portal.kernel.test.util.ServiceContextTestUtil;
 import com.liferay.portal.kernel.test.util.TestPropsValues;
 import com.liferay.portal.kernel.util.FriendlyURLNormalizerUtil;
 import com.liferay.portal.kernel.util.HashMapBuilder;
+import com.liferay.portal.kernel.util.HashMapDictionaryBuilder;
 import com.liferay.portal.kernel.util.LocaleThreadLocal;
 import com.liferay.portal.kernel.util.LocaleUtil;
+import com.liferay.portal.kernel.workflow.WorkflowConstants;
 import com.liferay.portal.test.rule.Inject;
 import com.liferay.portal.test.rule.LiferayIntegrationTestRule;
 
@@ -133,6 +138,163 @@ public class JournalArticleFriendlyURLTest {
 			ServiceContextTestUtil.getServiceContext(_group.getGroupId()));
 
 		Assert.assertEquals(friendlyURLMap, updatedArticle.getFriendlyURLMap());
+	}
+
+	@Test
+	public void testFriendlyURLRedirectAfterMaxVersionExpiration()
+		throws Exception {
+
+		try (ConfigurationTemporarySwapper configurationTemporarySwapper =
+				new ConfigurationTemporarySwapper(
+					"com.liferay.journal.configuration." +
+						"JournalServiceConfiguration",
+					HashMapDictionaryBuilder.<String, Object>put(
+						"journalArticleMaxVersionCount", 2
+					).build())) {
+
+			JournalArticle article = _addJournalArticleWithTitleMap(
+				LocaleUtil.US,
+				HashMapBuilder.put(
+					LocaleUtil.US, RandomTestUtil.randomString()
+				).build());
+
+			String initialUrlTitle = article.getUrlTitle();
+
+			JournalArticle updatedArticle = _updateFriendlyURL(
+				article, LocaleUtil.US, RandomTestUtil.randomString());
+
+			String updatedUrlTitle = updatedArticle.getUrlTitle();
+
+			Assert.assertNotEquals(initialUrlTitle, updatedUrlTitle);
+
+			_updateFriendlyURL(updatedArticle, LocaleUtil.US, updatedUrlTitle);
+
+			JournalArticle expiredArticle =
+				_journalArticleLocalService.fetchArticle(
+					_group.getGroupId(), article.getArticleId(),
+					article.getVersion());
+
+			Assert.assertEquals(
+				WorkflowConstants.STATUS_EXPIRED, expiredArticle.getStatus());
+
+			FriendlyURLEntry friendlyURLEntry =
+				_friendlyURLEntryLocalService.fetchFriendlyURLEntry(
+					_group.getGroupId(), JournalArticle.class, initialUrlTitle);
+
+			Assert.assertNotNull(friendlyURLEntry);
+			Assert.assertEquals(
+				article.getResourcePrimKey(), friendlyURLEntry.getClassPK());
+		}
+	}
+
+	@Test
+	public void testFriendlyURLRemovedAfterVersionDeletion() throws Exception {
+		JournalArticle article = _addJournalArticleWithTitleMap(
+			LocaleUtil.US,
+			HashMapBuilder.put(
+				LocaleUtil.US, RandomTestUtil.randomString()
+			).build());
+
+		String initialUrlTitle = article.getUrlTitle();
+
+		JournalArticle updatedArticle = _updateFriendlyURL(
+			article, LocaleUtil.US, RandomTestUtil.randomString());
+
+		String updatedUrlTitle = updatedArticle.getUrlTitle();
+
+		Assert.assertNotEquals(initialUrlTitle, updatedUrlTitle);
+
+		Assert.assertNotNull(
+			_friendlyURLEntryLocalService.fetchFriendlyURLEntry(
+				_group.getGroupId(), JournalArticle.class, initialUrlTitle));
+
+		_journalArticleLocalService.deleteArticle(
+			_group.getGroupId(), article.getArticleId(), article.getVersion(),
+			null,
+			ServiceContextTestUtil.getServiceContext(
+				_group.getGroupId(), TestPropsValues.getUserId()));
+
+		Assert.assertNull(
+			_friendlyURLEntryLocalService.fetchFriendlyURLEntry(
+				_group.getGroupId(), JournalArticle.class, initialUrlTitle));
+
+		FriendlyURLEntry friendlyURLEntry =
+			_friendlyURLEntryLocalService.fetchFriendlyURLEntry(
+				_group.getGroupId(), JournalArticle.class, updatedUrlTitle);
+
+		Assert.assertNotNull(friendlyURLEntry);
+		Assert.assertEquals(
+			article.getResourcePrimKey(), friendlyURLEntry.getClassPK());
+	}
+
+	@Test
+	public void testFriendlyURLRemovedForNondefaultLocaleAfterVersionDeletion()
+		throws Exception {
+
+		JournalArticle article = _addJournalArticleWithTitleMap(
+			LocaleUtil.US,
+			HashMapBuilder.put(
+				LocaleUtil.FRANCE, RandomTestUtil.randomString()
+			).put(
+				LocaleUtil.US, RandomTestUtil.randomString()
+			).build());
+
+		Map<Locale, String> initialFriendlyURLMap = article.getFriendlyURLMap();
+
+		String initialFrUrlTitle = initialFriendlyURLMap.get(LocaleUtil.FRANCE);
+		String initialUsUrlTitle = initialFriendlyURLMap.get(LocaleUtil.US);
+
+		_updateFriendlyURL(
+			article, LocaleUtil.FRANCE, RandomTestUtil.randomString());
+
+		Assert.assertNotNull(
+			_friendlyURLEntryLocalService.fetchFriendlyURLEntry(
+				_group.getGroupId(), JournalArticle.class, initialFrUrlTitle));
+
+		_journalArticleLocalService.deleteArticle(
+			_group.getGroupId(), article.getArticleId(), article.getVersion(),
+			null,
+			ServiceContextTestUtil.getServiceContext(
+				_group.getGroupId(), TestPropsValues.getUserId()));
+
+		Assert.assertNull(
+			_friendlyURLEntryLocalService.fetchFriendlyURLEntry(
+				_group.getGroupId(), JournalArticle.class, initialFrUrlTitle));
+		Assert.assertNotNull(
+			_friendlyURLEntryLocalService.fetchFriendlyURLEntry(
+				_group.getGroupId(), JournalArticle.class, initialUsUrlTitle));
+	}
+
+	@Test
+	public void testFriendlyURLRetainedWhenUrlTitleReused() throws Exception {
+		JournalArticle article = _addJournalArticleWithTitleMap(
+			LocaleUtil.US,
+			HashMapBuilder.put(
+				LocaleUtil.US, RandomTestUtil.randomString()
+			).build());
+
+		String urlTitle = article.getUrlTitle();
+
+		JournalArticle updatedArticle = _updateFriendlyURL(
+			article, LocaleUtil.US, urlTitle);
+
+		Assert.assertEquals(urlTitle, updatedArticle.getUrlTitle());
+		Assert.assertNotEquals(
+			article.getVersion(), updatedArticle.getVersion());
+
+		_journalArticleLocalService.deleteArticle(
+			_group.getGroupId(), article.getArticleId(), article.getVersion(),
+			null,
+			ServiceContextTestUtil.getServiceContext(
+				_group.getGroupId(), TestPropsValues.getUserId()));
+
+		FriendlyURLEntry friendlyURLEntry =
+			_friendlyURLEntryLocalService.fetchFriendlyURLEntry(
+				_group.getGroupId(), JournalArticle.class, urlTitle);
+
+		Assert.assertNotNull(friendlyURLEntry);
+		Assert.assertEquals(
+			article.getResourcePrimKey(), friendlyURLEntry.getClassPK());
 	}
 
 	@Test
@@ -331,6 +493,28 @@ public class JournalArticleFriendlyURLTest {
 		return valuesMap;
 	}
 
+	private JournalArticle _updateFriendlyURL(
+			JournalArticle article, Locale locale, String urlTitle)
+		throws Exception {
+
+		Map<Locale, String> friendlyURLMap = HashMapBuilder.putAll(
+			article.getFriendlyURLMap()
+		).put(
+			locale, urlTitle
+		).build();
+
+		return _journalArticleLocalService.updateArticle(
+			article.getUserId(), _group.getGroupId(), article.getFolderId(),
+			article.getArticleId(), article.getVersion(), article.getTitleMap(),
+			article.getDescriptionMap(), friendlyURLMap, article.getContent(),
+			article.getDDMTemplateKey(), article.getLayoutUuid(), 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, true, 0, 0, 0, 0, 0, true, article.isIndexable(),
+			article.isSmallImage(), 0, article.getSmallImageSource(),
+			article.getSmallImageURL(), null, null, null,
+			ServiceContextTestUtil.getServiceContext(
+				_group.getGroupId(), TestPropsValues.getUserId()));
+	}
+
 	private JournalArticle _updateJournalArticleWithTitleMap(
 			JournalArticle article, Map<Locale, String> titleMap)
 		throws Exception {
@@ -340,6 +524,9 @@ public class JournalArticleFriendlyURLTest {
 			ServiceContextTestUtil.getServiceContext(
 				_group.getGroupId(), TestPropsValues.getUserId()));
 	}
+
+	@Inject
+	private FriendlyURLEntryLocalService _friendlyURLEntryLocalService;
 
 	@DeleteAfterTestRun
 	private Group _group;
